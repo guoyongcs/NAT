@@ -18,10 +18,18 @@ Please follow the [guide](https://github.com/tkipf/pygcn) to install pygcn.
 
 ## Datasets
 We consider two benchmark classification datsets, including CIFAR-10 and ImageNet.
- 
+
 CIFAR-10 can be automatically downloaded by torchvision.
 
 ImageNet needs to be manually downloaded (preferably to a SSD) following the instructions [here](https://github.com/pytorch/examples/tree/master/imagenet).
+
+
+
+## Training the transformer
+
+```
+python nas_compact_train_search.py --init_channels 20 --layers 8 --inner_steps 9 --valid_inner_steps 9 --prefix /opt/ml/model --seed 12345 --epoch 100 --test_freq 4 --inner_lr 0.001 --learning_rate 0.01 --learning_rate_min 0.01 --data data --report_freq 50 --controller_start_training 0 --entropy_coeff 0.005 0.005 --pruner_dropout 0 --num_steps 5 --op_type LOOSE_END_PRIMITIVES --loose_end
+```
 
 
 
