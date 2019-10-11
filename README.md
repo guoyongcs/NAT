@@ -68,13 +68,7 @@ python visualize.py some_arch
 ```
 where `some_arch` should be replaced by any architecture in [genotypes.py](./genotypes.py).
 
-##Evaluation Method
 
-To evaluate the performance of different architectures, we train the models from scratch on CIFAR-10 and ImageNet. We release the evaluation code for both data sets as follows.
-
-**CIFAR-10** ([evaluate_cifar.py](./evaluate_cifar.py))
-
-**ImageNet** ([evaluate_imagenet.py](./evaluate_imagenet.py))
 
 
 ## Citation
