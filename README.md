@@ -1,8 +1,8 @@
 # NAT: Neural Architecture Transformer for Accurate and Compact Architectures
 
-We provide the test interface to show the performance of NAT on transforming any arbitrary architecture.
+Pytorch implementation for “NAT: Neural Architecture Transformer for Accurate and Compact Architectures”.
 
-## A simple demo
+## A Simple Demo of NAT
 
 <p align="center">
     <img src="./imgs/different_transformation.gif" width="100%"/>
@@ -23,17 +23,15 @@ CIFAR-10 can be automatically downloaded by torchvision.
 
 ImageNet needs to be manually downloaded (preferably to a SSD) following the instructions [here](https://github.com/pytorch/examples/tree/master/imagenet).
 
+## Training Method
 
-
-## Training the transformer
-
+Train NAT on CIFAR-10. We consider two kinds of architectures with their associated operation sets, namely loose-end architectures and fully-concat architectures.
 ```
-python nas_compact_train_search.py --init_channels 20 --layers 8 --inner_steps 9 --valid_inner_steps 9 --prefix /opt/ml/model --seed 12345 --epoch 100 --test_freq 4 --inner_lr 0.001 --learning_rate 0.01 --learning_rate_min 0.01 --data data --report_freq 50 --controller_start_training 0 --entropy_coeff 0.005 0.005 --pruner_dropout 0 --num_steps 5 --op_type LOOSE_END_PRIMITIVES --loose_end
+python train_search.py --data $DATA_DIR$ --op_type $OP_TYPE$
 ```
 
 
-
-## Architecture transformation (transforming any arbitrary architecture)
+## Inference Method
 
 ### 1. Put the input architectures in [genotypes.py](./genotypes.py) as follows
 
@@ -48,26 +46,7 @@ DARTS = Genotype(
 
 ### 2. Feed an architecture into the transformer and obtain the transformed architecture
 
-We release the pretrained architecture transformers for both loose-end and fully-connect architecture.
-
-**Loose-end architecture** ([loose_end.pt](./pretrained/loose_end.pt))
-
-You can obtain the transformed architecture by taking a loose-end architecture as input, *e.g.*, --arch VGG.  
-
-```
-python nas_compact_derive.py --data ./data --arch VGG --model_path pretrained/loose_end.pt --op_type HAND_PRIMITIVES --loose_end
-```
-
-<p align="center">
-<img src="./imgs/vgg.jpg" alt="vgg" width="100%">
-</p>
-<p align="center">
-Figure: An example of architecture transformation on loose-end architecture.
-</p>
-
-**Fully-connect architecture** ([fully_connect.pt](./pretrained/fully-connect.pt))
-
-You can obtain the transformed architecture by taking a fully-connect architecture as input, *e.g.*, --arch DARTS.  
+You can obtain the transformed architecture by taking an architecture as input, *e.g.*, --arch DARTS.  
 
 
 ```
@@ -78,16 +57,11 @@ python nas_compact_derive.py --data ./data --arch DARTS --model_path pretrained/
 <img src="./imgs/darts.jpg" alt="darts" width="80%">
 </p>
 <p align="center">
-Figure: An example of architecture transformation on fully-connect architecture.
+Figure: An example of architecture transformation..
 </p>
 
-You can also apply the transformer on some random architectures, *i.e.*, A1~A10 defined in [genotypes.py](./genotypes.py).
 
-```
-python nas_compact_derive.py --data ./data --arch A1 --model_path pretrained/fully_connect.pt
-```
-
-### 3. Architecture visualization
+## Architecture Visualization
 
 You can visualize both the input and the transformed architectures by
 ```
@@ -95,12 +69,14 @@ python visualize.py some_arch
 ```
 where `some_arch` should be replaced by any architecture in [genotypes.py](./genotypes.py).
 
-### 4. Architecture evaluation
+
+##Evaluation Method
+
 
 To evaluate the performance of different architectures, we train the models from scratch on CIFAR-10 and ImageNet. We release the evaluation code for both data sets as follows.
 
-**CIFAR-10** ([nas_compact_train_cifar.py](./nas_compact_train_cifar.py))
+**CIFAR-10** ([evaluate_cifar.py](./evaluate_cifar.py))
 
 
-**ImageNet** ([nas_compact_train_imagenet.py](./nas_compact_train_imagenet.py))
+**ImageNet** ([evaluate_imagenet.py](./evaluate_imagenet.py))
 
