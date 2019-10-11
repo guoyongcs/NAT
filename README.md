@@ -27,10 +27,9 @@ ImageNet needs to be manually downloaded (preferably to a SSD) following the ins
 
 We consider to optimize two kinds of architectures, namely loose-end architectures and fully-concat architectures. More details about these two kinds of architectures can be found in [ENAS](https://arxiv.org/abs/1802.03268) and [DARTS](https://arxiv.org/abs/1806.09055), respectively.
 
-You may choose 
-	1. `LOOSE_END_PRIMITIVES` for loose-end architectures
-	2. `FULLY_CONCAT_PRIMITIVES` for fully-concat architectures.
+You may choose *LOOSE_END_PRIMITIVES* for loose-end architectures and *FULLY_CONCAT_PRIMITIVES* for fully-concat architectures
 
+NAT model can be trained as follows:
 ```
 python train_search.py --data $DATA_DIR$ --op_type $OP_TYPE$
 ```
