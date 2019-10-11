@@ -84,9 +84,6 @@ class AuxiliaryHeadImageNet(nn.Module):
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
             nn.Conv2d(128, 768, 2, bias=False),
-            # NOTE: This batchnorm was omitted in my earlier implementation due to a typo.
-            # Commenting it out for consistency with the experiments in the paper.
-            # nn.BatchNorm2d(768),
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d((1,1))
         )
@@ -131,19 +128,6 @@ class NetworkCIFAR(nn.Module):
             self.auxiliary_head = AuxiliaryHeadCIFAR(C_to_auxiliary, num_classes)
         self.global_pooling = nn.AdaptiveAvgPool2d(1)
         self.classifier = nn.Linear(C_prev, num_classes)
-        self.total_flops = 0
-        self.set_hook()
-
-    def set_hook(self):
-        for name, v in self.named_modules():
-            if "auxiliary" not in name:
-                v.register_forward_hook(self._hook_intermediate_feature)
-
-    def _hook_intermediate_feature(self, module, input, output):
-        if isinstance(module, nn.Conv2d):
-            self.total_flops += input[0].size(1) * output.size(1) * module.kernel_size[0] * module.kernel_size[1] * input[0].size(2) * input[0].size(3) / module.stride[1] / module.groups
-        elif isinstance(module, nn.Linear):
-            self.total_flops += input[0].size(1) * output.size(1)
 
     def model_parameters(self):
         for k, v in self.named_parameters():
@@ -203,22 +187,9 @@ class NetworkImageNet(nn.Module):
 
         if auxiliary:
             self.auxiliary_head = AuxiliaryHeadImageNet(C_to_auxiliary, num_classes)
-        # self.global_pooling = nn.AvgPool2d(7)
         self.global_pooling = nn.AdaptiveAvgPool2d((1,1))
         self.dropout = nn.Dropout(final_dropout)
         self.classifier = nn.Linear(C_prev, num_classes)
-        self.total_flops = 0
-        self.set_hook()
-
-    def set_hook(self):
-        for module in self.modules():
-            module.register_forward_hook(self._hook_intermediate_feature)
-
-    def _hook_intermediate_feature(self, module, input, output):
-        if isinstance(module, nn.Conv2d):
-            self.total_flops += input[0].size(1) * output.size(1) * module.kernel_size[0] * module.kernel_size[1] * input[0].size(2) * input[0].size(3) / module.stride[1] / module.groups
-        elif isinstance(module, nn.Linear):
-            self.total_flops += input[0].size(1) * output.size(1)
 
     def model_parameters(self):
         for k, v in self.named_parameters():
@@ -226,7 +197,6 @@ class NetworkImageNet(nn.Module):
                 yield v
 
     def forward(self, input, drop_path_prob=0):
-        self.total_flops = 0
         self.drop_path_prob = drop_path_prob
         logits_aux = None
         s0 = self.stem0(input)
@@ -237,7 +207,5 @@ class NetworkImageNet(nn.Module):
                 if self._auxiliary and self.training:
                     logits_aux = self.auxiliary_head(s1)
         out = self.global_pooling(s1)
-        # nasnet add a dropout
-        # out = self.dropout(out)
         logits = self.classifier(out.view(out.size(0), -1))
         return logits, logits_aux

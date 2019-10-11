@@ -1,9 +1,7 @@
 import os
 import sys
-import time
 import glob
 import numpy as np
-import torch
 import utils
 import logging
 import argparse
@@ -16,9 +14,7 @@ import random
 import torchvision.transforms as transforms
 import time
 
-from torch.autograd import Variable
 from evaluate_model import NetworkImageNet as Network
-from scheduler import CosineWithRestarts
 import torch
 
 parser = argparse.ArgumentParser("imagenet")
@@ -46,7 +42,6 @@ parser.add_argument('--arch', type=str, default='DARTS', help='which architectur
 parser.add_argument('--grad_clip', type=float, default=5, help='gradient clipping')
 parser.add_argument('--ngpus', type=int, default=1, help='number of gpus')
 parser.add_argument('--prefix', type=str, default='.', help='parent save path: /opt/ml/disk/ for seven')
-# scheduler restart
 parser.add_argument('--scheduler', type=str, default='naive_cosine', help='type of LR scheduler: naive_cosine | consine_restart | decay | step')
 parser.add_argument('--learning_rate_min', type=float, default=0.001, help='min learning rate')
 parser.add_argument('--T_mul', type=float, default=2.0, help='multiplier for cycle')
@@ -152,13 +147,6 @@ def main():
   genotype = eval("genotypes.%s" % args.arch)
   model = Network(args.init_channels, IMAGENET_CLASSES, args.layers, args.auxiliary, genotype, args.final_dropout)
 
-  # optimizer = torch.optim.SGD(
-  #     model.parameters(),
-  #     args.learning_rate,
-  #     momentum=args.momentum,
-  #     weight_decay=args.weight_decay
-  # )
-
   group_weight = []
   group_bias = []
   for name, param in model.named_parameters():
@@ -178,11 +166,6 @@ def main():
       args.last_epoch = cpt['epoch'] if args.last_epoch == -1 else args.last_epoch
       model.load_state_dict(cpt['state_dict'])
       best_acc_top1 = cpt['best_acc_top1']
-      # try:
-      #   optimizer.load_state_dict(cpt['optimizer'])
-      # except:
-      #   print('cannot load optimizer states')
-
 
   model = dataparallel(model, args.ngpus)
 
@@ -228,10 +211,6 @@ def main():
   if args.scheduler == "naive_cosine":
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, float(args.epochs), eta_min=args.learning_rate_min, last_epoch=-1
-    )
-  elif args.scheduler == 'consine_restart':
-    scheduler = CosineWithRestarts(
-        optimizer, t_0=args.T0, eta_min=args.learning_rate_min, factor=args.T_mul, last_epoch=-1
     )
   elif args.scheduler == 'decay':
     scheduler = torch.optim.lr_scheduler.StepLR(
@@ -290,8 +269,6 @@ def train(train_queue, model, criterion, optimizer, device, epoch):
   model.train()
 
   for step, (input, target) in enumerate(train_queue):
-    # start_time = time.time()
-    # end_time = start_time
     input = input.to(device)
     target = target.to(device)
 
@@ -312,11 +289,6 @@ def train(train_queue, model, criterion, optimizer, device, epoch):
     top1.update(prec1.item(), n)
     top5.update(prec5.item(), n)
 
-    print('%fM' % (model.total_flops / 1e6))
-    assert False
-    # end_time = time.time()
-    # iter_time = end_time - start_time
-    # print(iter_time)
     if step % args.report_freq == 0:
       logging.info('train %03d [%03d/%03d] %e %f %f', epoch, step, len(train_queue), objs.avg, top1.avg, top5.avg)
 

@@ -14,9 +14,7 @@ import torchvision.datasets as dset
 import torch.backends.cudnn as cudnn
 import random
 
-# from torch.autograd import Variable
 from evaluate_model import NetworkCIFAR as Network
-from scheduler import CosineWithRestarts
 
 parser = argparse.ArgumentParser("cifar")
 parser.add_argument('--data', type=str, default='../data', help='location of the data corpus')
@@ -40,7 +38,6 @@ parser.add_argument('--seed', type=int, default=0, help='random seed')
 parser.add_argument('--arch', type=str, default='DARTS', help='which architecture to use')
 parser.add_argument('--grad_clip', type=float, default=5, help='gradient clipping')
 parser.add_argument('--ngpus', type=int, default=1, help='number of gpus')
-# scheduler restart
 parser.add_argument('--scheduler', type=str, default='naive_cosine', help='type of LR scheduler')
 parser.add_argument('--learning_rate_min', type=float, default=0.001, help='min learning rate')
 parser.add_argument('--T_mul', type=float, default=2.0, help='multiplier for cycle')
@@ -49,7 +46,7 @@ parser.add_argument('--warmup_epochs', type=int, default=0, help='number of epoc
 parser.add_argument('--no_bias_decay', action='store_true', default=False, help='no bias decay')
 
 # new
-parser.add_argument('--prefix', type=str, default='.', help='parent save path: /opt/ml/disk/ for seven')
+parser.add_argument('--prefix', type=str, default='.', help='parent save path')
 
 args = parser.parse_args()
 
@@ -158,10 +155,6 @@ def main():
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer, float(args.epochs), eta_min=args.learning_rate_min
         )
-    elif args.scheduler == 'consine_restart':
-        scheduler = CosineWithRestarts(
-            optimizer, t_0=args.T0, eta_min=args.learning_rate_min, last_epoch=-1, factor=args.T_mul
-        )
     else:
         assert False, "unsupported schudeler type: %s" % args.scheduler
 
@@ -210,9 +203,6 @@ def train(train_queue, model, criterion, optimizer, device, epoch):
         objs.update(loss.item(), n)
         top1.update(prec1.item(), n)
         top5.update(prec5.item(), n)
-
-        print('%fM' % (model.total_flops / 1e6))
-        assert False
 
         if step % args.report_freq == 0:
             logging.info('train %03d %e %f %f', step, objs.avg, top1.avg, top5.avg)

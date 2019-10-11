@@ -91,7 +91,7 @@ class NASCell(nn.Module):
                         # loose end
                         state_list.append(states[i])
                     else:
-                        # not loose end
+                        # fully concat
                         state_list.append(states[i] * 0)
                 return torch.cat(state_list, dim=1)
             else:

@@ -1,6 +1,5 @@
 import os
 import sys
-import time
 import glob
 import numpy as np
 import torch
@@ -11,7 +10,6 @@ import torch.nn as nn
 import torch.utils
 import torchvision.datasets as dset
 import torch.backends.cudnn as cudnn
-from graphviz import Digraph
 
 from search_model import NASNetwork as Network
 import random
