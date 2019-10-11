@@ -60,7 +60,6 @@ python nas_compact_derive.py --data ./data --arch DARTS --model_path pretrained/
 Figure: An example of architecture transformation..
 </p>
 
-
 ## Architecture Visualization
 
 You can visualize both the input and the transformed architectures by
@@ -69,14 +68,23 @@ python visualize.py some_arch
 ```
 where `some_arch` should be replaced by any architecture in [genotypes.py](./genotypes.py).
 
-
 ##Evaluation Method
-
 
 To evaluate the performance of different architectures, we train the models from scratch on CIFAR-10 and ImageNet. We release the evaluation code for both data sets as follows.
 
 **CIFAR-10** ([evaluate_cifar.py](./evaluate_cifar.py))
 
-
 **ImageNet** ([evaluate_imagenet.py](./evaluate_imagenet.py))
+
+
+## Citation
+
+```
+@inproceedings{guo2019nat,
+  title={NAT: Neural Architecture Transformer for Accurateand Compact Architectures},
+  author={Guo, Yong and Zheng, Yin and Tan, Mingkui and Chen, Qi and Chen, Jian and Zhao, Peilin and Huang, Junzhou},
+  booktitle={Advances in Neural Information Processing Systems},
+  year={2019}
+}
+```
 
