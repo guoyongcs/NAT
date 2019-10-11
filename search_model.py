@@ -1,11 +1,8 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import genotypes
 from operations import *
 import utils
 import numpy as np
-from utils import arch_to_genotype, draw_genotype, infinite_get, arch_to_string
+from utils import arch_to_genotype, draw_genotype
 import os
 from pygcn.layers import GraphConvolution
 
@@ -28,7 +25,7 @@ class NASOp(nn.Module):
 
 
 class NASCell(nn.Module):
-    def __init__(self, steps, device, multiplier, C_prev_prev, C_prev, C, reduction, reduction_prev, loose_end=False, concat=None, op_type='NOT_LOOSE_END_PRIMITIVES'):
+    def __init__(self, steps, device, multiplier, C_prev_prev, C_prev, C, reduction, reduction_prev, loose_end=False, concat=None, op_type='FULLY_CONCAT_PRIMITIVES'):
         super(NASCell, self).__init__()
         self.steps = steps
         self.device = device
@@ -51,7 +48,6 @@ class NASCell(nn.Module):
                 op = NASOp(C, stride, op_type)
                 self._ops.append(op)
 
-        self.final_conv = FinalConv(C*multiplier, C*multiplier)
         self._concat = concat
 
     def forward(self, s0, s1, arch):
@@ -102,30 +98,25 @@ class NASCell(nn.Module):
                 return torch.cat([states[i] for i in range(2, self._steps + 2)], dim=1)
 
 
-class ArchPruner(nn.Module):
-    def __init__(self, steps, device, edge_hid, nfeat, gcn_hid, dropout, normalize=False, split_fc=False, op_type='NOT_LOOSE_END_PRIMITIVES'):
+class ArchTransformer(nn.Module):
+    def __init__(self, steps, device, edge_hid, nfeat, gcn_hid, dropout, normalize=False,
+                 op_type='FULLY_CONCAT_PRIMITIVES'):
         """
 
         :param nfeat: feature dimension of each node in the graph
         :param nhid: hidden dimension
         :param dropout: dropout rate for GCN
         """
-        super(ArchPruner, self).__init__()
+        super(ArchTransformer, self).__init__()
         self.steps = steps
         self.device = device
         self.normalize = normalize
-        self.split_fc = split_fc
         self.op_type = op_type
-        num_ops = len(genotypes.PRUNER_PRIMITIVES)
+        num_ops = len(genotypes.TRANSFORM_PRIMITIVES)
         self.gc1 = GraphConvolution(nfeat, gcn_hid)
         self.gc2 = GraphConvolution(gcn_hid, gcn_hid)
         self.dropout = dropout
-        if split_fc:
-            self.fc = nn.ModuleList()
-            for i in range(self.steps):
-                self.fc.append(nn.Linear(gcn_hid, num_ops * 2))
-        else:
-            self.fc = nn.Linear(gcn_hid, num_ops * 2)
+        self.fc = nn.Linear(gcn_hid, num_ops * 2)
 
         try:
             COMPACT_PRIMITIVES = eval("genotypes.%s" % op_type)
@@ -137,7 +128,6 @@ class ArchPruner(nn.Module):
         self.op_hidden = nn.Embedding(len(COMPACT_PRIMITIVES), edge_hid)
         # [op0, op1]
         self.emb_attn = nn.Linear(2*edge_hid, nfeat)
-        # self.query_index = torch.LongTensor(range(0, steps + 2)).to(device)
 
     def forward(self, arch):
         # initial the first two nodes
@@ -174,18 +164,12 @@ class ArchPruner(nn.Module):
         x = F.dropout(x, self.dropout, training=self.training)
         x = self.gc2(x, adj)
         x = x[2:]
-        if self.split_fc:
-            logits = []
-            for i in range(self.steps):
-                logits.append(self.fc[i](x[[i]]))
-            logits = torch.cat(logits, dim=0)
-        else:
-            logits = self.fc(x)
+        logits = self.fc(x)
         logits = logits.view(self.steps*2, -1)
         probs = F.softmax(logits, dim=-1)
         probs = probs + 1e-5
         log_probs = torch.log(probs)
-        _, action = probs.max(1, keepdim=True)
+        action = probs.multinomial(num_samples=1)
         selected_log_p = log_probs.gather(-1, action)
         log_p = selected_log_p.sum()
         entropy = -(log_probs * probs).sum()
@@ -194,20 +178,15 @@ class ArchPruner(nn.Module):
 
 
 class ArchMaster(nn.Module):
-    def __init__(self, n_ops, n_nodes, device, controller_type='LSTM', controller_hid=None,
-                 controller_temperature=None, controller_tanh_constant=None, controller_op_tanh_reduce=None, lstm_num_layers=2):
+    def __init__(self, n_ops, n_nodes, device, controller_hid=None, lstm_num_layers=2):
         super(ArchMaster, self).__init__()
         self.K = sum([x + 2 for x in range(n_nodes)])
         self.n_ops = n_ops
         self.n_nodes = n_nodes
         self.device = device
-        self.controller_type = controller_type
 
         self.controller_hid = controller_hid
         self.attention_hid = self.controller_hid
-        self.temperature = controller_temperature
-        self.tanh_constant = controller_tanh_constant
-        self.op_tanh_reduce = controller_op_tanh_reduce
         self.lstm_num_layers = lstm_num_layers
 
         # Embedding of (n_nodes+1) nodes
@@ -242,70 +221,33 @@ class ArchMaster(nn.Module):
         self.w_soft.bias.data.fill_(0)
 
     def forward(self):
-        log_p, entropy = 0, 0
         self.prev_nodes, self.prev_ops = [], []
         batch_size = 1
         inputs = self.static_inputs[batch_size]  # batch_size x hidden_dim
-        hidden = self.static_init_hidden[batch_size]
         for node_idx in range(self.n_nodes):
             for i in range(2):  # index_1, index_2
                 if node_idx == 0 and i == 0:
                     embed = inputs
                 else:
                     embed = self.node_op_hidden(inputs)
-                if self.force_uniform:
-                    probs = F.softmax(torch.zeros(node_idx + 2).type_as(embed), dim=-1)
-                else:
-                    hx, cx = self.lstm(embed, hidden)
-                    query = self.node_op_hidden.weight.index_select(
-                        0, self.query_index[0:node_idx + 2]
-                    )
-                    query = self.tanh(self.emb_attn(query) + self.hid_attn(hx))
-                    logits = self.v_attn(query).view(-1)
-                    if self.temperature is not None:
-                        logits /= self.temperature
-                    if self.tanh_constant is not None:
-                        logits = self.tanh_constant * self.tanh(logits)
-                    probs = F.softmax(logits, dim=-1)  # absent in ENAS code
-                    # reset hidden and inputs
-                    hidden = (hx, cx)
-                log_probs = torch.log(probs)
+                # force uniform
+                probs = F.softmax(torch.zeros(node_idx + 2).type_as(embed), dim=-1)
                 action = probs.multinomial(num_samples=1)
-                selected_log_p = log_probs.gather(0, action)[0]
                 self.prev_nodes.append(action)
-                log_p += selected_log_p
-                entropy += -(log_probs * probs).sum()
                 inputs = utils.get_variable(action, self.device, requires_grad=False)
             for i in range(2):  # op_1, op_2
                 embed = self.node_op_hidden(inputs)
-                if self.force_uniform:
-                    probs = F.softmax(torch.zeros(self.n_ops).type_as(embed), dim=-1)
-                else:
-                    hx, cx = self.lstm(embed, hidden)
-                    logits = self.w_soft(hx).view(-1)
-                    if self.temperature is not None:
-                        logits /= self.temperature
-                    if self.tanh_constant is not None:
-                        op_tanh = self.tanh_constant / self.op_tanh_reduce
-                        logits = op_tanh * self.tanh(logits)
-                    probs = F.softmax(logits, dim=-1)
-                    # reset hidden and inputs
-                    hidden = (hx, cx)
-                log_probs = torch.log(probs)
+                # force uniform
+                probs = F.softmax(torch.zeros(self.n_ops).type_as(embed), dim=-1)
                 action = probs.multinomial(num_samples=1)
                 self.prev_ops.append(action)
-                selected_log_p = log_probs.gather(0, action)[0]
-                log_p += selected_log_p
-                entropy += -(log_probs * probs).sum()
                 inputs = utils.get_variable(action + self.n_nodes + 1, self.device, requires_grad=False)
         arch = utils.convert_lstm_output(self.n_nodes, torch.cat(self.prev_nodes), torch.cat(self.prev_ops))
-        return arch, log_p, entropy
+        return arch
 
 
 class NASNetwork(nn.Module):
-    def __init__(self, C, num_classes, layers, criterion, device,
-                 steps=4, multiplier=4, stem_multiplier=3, controller_type='LSTM', controller_hid=None,
-                 controller_temperature=None, controller_tanh_constant=None, controller_op_tanh_reduce=None, entropy_coeff=[0.0, 0.0], edge_hid=100, pruner_nfeat=1024, pruner_nhid=512, pruner_dropout=0, pruner_normalize=False, loose_end=False, split_fc=False, normal_concat=None, reduce_concat=None, op_type='NOT_LOOSE_END_PRIMITIVES'):
+    def __init__(self, C, num_classes, layers, criterion, device, steps=4, stem_multiplier=3, controller_hid=None, entropy_coeff=[0.0, 0.0], edge_hid=100, transformer_nfeat=1024, transformer_nhid=512, transformer_dropout=0, transformer_normalize=False, loose_end=False, normal_concat=None, reduce_concat=None, op_type='FULLY_CONCAT_PRIMITIVES'):
         super(NASNetwork, self).__init__()
         self._C = C
         self._num_classes = num_classes
@@ -313,22 +255,16 @@ class NASNetwork(nn.Module):
         self._criterion = criterion
         self._steps = steps
         multiplier = steps
-        self._multiplier = multiplier
         self._device = device
 
-        self.controller_type = controller_type
         self.controller_hid = controller_hid
-        self.controller_temperature = controller_temperature
-        self.controller_tanh_constant = controller_tanh_constant
-        self.controller_op_tanh_reduce = controller_op_tanh_reduce
         self.entropy_coeff = entropy_coeff
 
         self.edge_hid = edge_hid
-        self.pruner_nfeat = pruner_nfeat
-        self.pruner_nhid = pruner_nhid
-        self.pruner_dropout = pruner_dropout
-        self.pruner_normalize = pruner_normalize
-        self.split_fc = split_fc
+        self.transformer_nfeat = transformer_nfeat
+        self.transformer_nhid = transformer_nhid
+        self.transformer_dropout = transformer_dropout
+        self.transformer_normalize = transformer_normalize
         self.op_type = op_type
 
         self.loose_end = loose_end
@@ -371,17 +307,13 @@ class NASNetwork(nn.Module):
             assert False, 'not supported op type %s' % (self.op_type)
 
         num_ops = len(COMPACT_PRIMITIVES)-1
-        self.arch_normal_master = ArchMaster(num_ops, self._steps, self._device, self.controller_type,
-                                             self.controller_hid, self.controller_temperature,
-                                             self.controller_tanh_constant, self.controller_op_tanh_reduce)
-        self.arch_reduce_master = ArchMaster(num_ops, self._steps, self._device, self.controller_type,
-                                             self.controller_hid, self.controller_temperature,
-                                             self.controller_tanh_constant, self.controller_op_tanh_reduce)
+        self.arch_normal_master = ArchMaster(num_ops, self._steps, self._device, self.controller_hid)
+        self.arch_reduce_master = ArchMaster(num_ops, self._steps, self._device, self.controller_hid)
         self._arch_parameters = list(self.arch_normal_master.parameters()) + list(self.arch_reduce_master.parameters())
 
     def _initialize_arch_transformer(self):
-        self.arch_normal_pruner = ArchPruner(self._steps, self._device, self.edge_hid, self.pruner_nfeat, self.pruner_nhid, self.pruner_dropout, self.pruner_normalize, self.split_fc, op_type=self.op_type)
-        self._transformer_parameters = list(self.arch_normal_pruner.parameters())
+        self.arch_transformer = ArchTransformer(self._steps, self._device, self.edge_hid, self.transformer_nfeat, self.transformer_nhid, self.transformer_dropout, self.transformer_normalize, op_type=self.op_type)
+        self._transformer_parameters = list(self.arch_transformer.parameters())
 
     def _inner_forward(self, input, arch_normal, arch_reduce):
         s0 = s1 = self.stem(input)
@@ -407,162 +339,83 @@ class NASNetwork(nn.Module):
             top1.update(accuracy.item(), n)
         return top1.avg
 
-    def test(self, test_queue, n_archs, n_pruned, logger, folder, suffix):
+    def test(self, test_queue, n_optim, logger, folder, suffix):
+        arch_normal = self.arch_normal_master()
+        arch_reduce = self.arch_reduce_master()
+        self.derive_optimized_arch(test_queue, arch_normal, arch_reduce, n_optim, logger, folder, suffix)
+
+    def derive_optimized_arch(self, test_queue, arch_normal, arch_reduce, n_optim, logger, folder, suffix, normal_concat=None, reduce_concat=None):
         best_acc = -np.inf
-        best_pruned_acc = -np.inf
-        best_acc_improvement = -np.inf
+        best_optimized_acc = -np.inf
         best_arch_normal_logP = None
         best_arch_reduce_logP = None
         best_arch_normal_ent = None
         best_arch_reduce_ent = None
         best_arch_normal = None
         best_arch_reduce = None
-        best_pruned_arch_normal = None
-        best_pruned_arch_reduce = None
-        temp_best_pruned_arch_normal = None
-        temp_best_pruned_arch_reduce = None
-        temp_best_arch_normal_logP = None
-        temp_best_arch_reduce_logP = None
-        temp_best_arch_normal_ent = None
-        temp_best_arch_reduce_ent = None
-
-        for i in range(n_archs):
-            arch_normal, arch_normal_logP, arch_normal_ent = self.arch_normal_master()
-            arch_reduce, arch_reduce_logP, arch_reduce_ent = self.arch_reduce_master()
-            top1 = self._test_acc(test_queue, arch_normal, arch_reduce)
-            temp_best_pruned_acc = -np.inf
-            for j in range(n_pruned):
-                pruned_normal, pruned_normal_logP, pruned_normal_entropy = self.arch_normal_pruner.forward(arch_normal)
-                pruned_reduce, pruned_reduce_logP, pruned_reduce_entropy = self.arch_normal_pruner.forward(arch_reduce)
-                pruned_top1 = self._test_acc(test_queue, pruned_normal, pruned_reduce)
-                if pruned_top1 > temp_best_pruned_acc:
-                    temp_best_pruned_acc = pruned_top1
-                    temp_best_pruned_arch_normal = pruned_normal
-                    temp_best_pruned_arch_reduce = pruned_reduce
-                    temp_best_arch_normal_logP = pruned_normal_logP
-                    temp_best_arch_reduce_logP = pruned_reduce_logP
-                    temp_best_arch_normal_ent = pruned_normal_entropy
-                    temp_best_arch_reduce_ent = pruned_reduce_entropy
-            if temp_best_pruned_acc - top1 > best_acc_improvement:
-                best_acc_improvement = temp_best_pruned_acc - top1
-                best_acc = top1
-                best_pruned_acc = temp_best_pruned_acc
-                best_arch_normal = arch_normal
-                best_arch_reduce = arch_reduce
-                best_pruned_arch_normal = temp_best_pruned_arch_normal
-                best_pruned_arch_reduce = temp_best_pruned_arch_reduce
-                best_arch_normal_logP = temp_best_arch_normal_logP
-                best_arch_reduce_logP = temp_best_arch_reduce_logP
-                best_arch_normal_ent = temp_best_arch_normal_ent
-                best_arch_reduce_ent = temp_best_arch_reduce_ent
-
-            logger.info('Candidate Arch#%d, Top1=%f, PrunedTop1=%f, -LogP(NOR,RED)=%f(%f,%f), ENT(NOR,RED)=%f(%f,%f), NormalCell=%s, ReduceCell=%s, PrunedNormalCell=%s, PrunedReduceCell=%s',
-                        i, top1, temp_best_pruned_acc,  -temp_best_arch_normal_logP-temp_best_arch_reduce_logP, -temp_best_arch_normal_logP, temp_best_arch_reduce_logP,
-                        temp_best_arch_normal_ent+temp_best_arch_reduce_ent, temp_best_arch_normal_ent, temp_best_arch_reduce_ent,
-                        arch_normal, arch_reduce,
-                        temp_best_pruned_arch_normal, temp_best_pruned_arch_reduce)
-
-        # draw best genotype, and logging genotype
-        logger.info("Best: Accuracy %f PrunnedAccuracy %f -LogP %f ENT %f", best_acc, best_pruned_acc, -best_arch_normal_logP-best_arch_reduce_logP, best_arch_normal_ent+best_arch_reduce_ent)
-        logger.info("Normal: -logP %f, Entropy %f\n%s\n%s", -best_arch_normal_logP, best_arch_normal_ent, best_arch_normal, best_pruned_arch_normal)
-        logger.info("Reduction: -logP %f, Entropy %f\n%s\n%s", -best_arch_reduce_logP, best_arch_reduce_ent, best_arch_reduce, best_pruned_arch_reduce)
-        genotype = arch_to_genotype(best_arch_normal, best_arch_reduce, self._steps, self.op_type)
-        pruned_genotype = arch_to_genotype(best_pruned_arch_normal, best_pruned_arch_reduce, self._steps, self.op_type)
-        draw_genotype(genotype.normal, self._steps, os.path.join(folder, "normal_%s" % suffix))
-        draw_genotype(genotype.reduce, self._steps, os.path.join(folder, "reduce_%s" % suffix))
-        draw_genotype(pruned_genotype.normal, self._steps, os.path.join(folder, "pruned_normal_%s" % suffix))
-        draw_genotype(pruned_genotype.reduce, self._steps, os.path.join(folder, "pruned_reduce_%s" % suffix))
-        logger.info('genotype = %s', genotype)
-        logger.info('pruned_genotype = %s', pruned_genotype)
-
-    def derive_pruned_arch(self, test_queue, arch_normal, arch_reduce, n_pruned, logger, folder, suffix, normal_concat=None, reduce_concat=None):
-        best_acc = -np.inf
-        best_pruned_acc = -np.inf
-        best_acc_improvement = -np.inf
-        best_arch_normal_logP = None
-        best_arch_reduce_logP = None
-        best_arch_normal_ent = None
-        best_arch_reduce_ent = None
-        best_arch_normal = None
-        best_arch_reduce = None
-        best_pruned_arch_normal = None
-        best_pruned_arch_reduce = None
+        best_optimized_arch_normal = None
+        best_optimized_arch_reduce = None
 
         top1 = self._test_acc(test_queue, arch_normal, arch_reduce)
-        for i in range(n_pruned):
-            pruned_normal, pruned_normal_logP, pruned_normal_entropy = self.arch_normal_pruner.forward(arch_normal)
-            # for j in range(n_pruned):
-            pruned_reduce, pruned_reduce_logP, pruned_reduce_entropy = self.arch_normal_pruner.forward(arch_reduce)
-            pruned_top1 = self._test_acc(test_queue, pruned_normal, pruned_reduce)
-            if pruned_top1 > best_pruned_acc:
+        logger.info("Sampling candidate architectures ...")
+        for i in range(n_optim):
+            optimized_normal, optimized_normal_logP, optimized_normal_entropy = self.arch_transformer.forward(arch_normal)
+            optimized_reduce, optimized_reduce_logP, optimized_reduce_entropy = self.arch_transformer.forward(arch_reduce)
+            optimized_top1 = self._test_acc(test_queue, optimized_normal, optimized_reduce)
+            if optimized_top1 > best_optimized_acc:
                 best_acc = top1
-                best_pruned_acc = pruned_top1
+                best_optimized_acc = optimized_top1
                 best_arch_normal = arch_normal
                 best_arch_reduce = arch_reduce
-                best_pruned_arch_normal = pruned_normal
-                best_pruned_arch_reduce = pruned_reduce
-                best_arch_normal_logP = pruned_normal_logP
-                best_arch_reduce_logP = pruned_reduce_logP
-                best_arch_normal_ent = pruned_normal_entropy
-                best_arch_reduce_ent = pruned_reduce_entropy
-            logger.info("Candidate%d: Accuracy %f PrunnedAccuracy %f", i, top1, pruned_top1)
+                best_optimized_arch_normal = optimized_normal
+                best_optimized_arch_reduce = optimized_reduce
+                best_arch_normal_logP = optimized_normal_logP
+                best_arch_reduce_logP = optimized_reduce_logP
+                best_arch_normal_ent = optimized_normal_entropy
+                best_arch_reduce_ent = optimized_reduce_entropy
 
-        # TODO: draw best genotype, and logging genotype
-        logger.info("Best: Accuracy %f PrunnedAccuracy %f -LogP %f ENT %f", best_acc, best_pruned_acc, -best_arch_normal_logP-best_arch_reduce_logP, best_arch_normal_ent+best_arch_reduce_ent)
-        logger.info("Normal: -logP %f, Entropy %f\n%s\n%s", -best_arch_normal_logP, best_arch_normal_ent, best_arch_normal, best_pruned_arch_normal)
-        logger.info("Reduction: -logP %f, Entropy %f\n%s\n%s", -best_arch_reduce_logP, best_arch_reduce_ent, best_arch_reduce, best_pruned_arch_reduce)
+        logger.info("Best: Accuracy %f OptimizedAccuracy %f -LogP %f ENT %f", best_acc, best_optimized_acc,
+                    -best_arch_normal_logP - best_arch_reduce_logP, best_arch_normal_ent + best_arch_reduce_ent)
+        logger.info("Normal: \n%s\n%s", best_arch_normal, best_optimized_arch_normal)
+        logger.info("Reduction: \n%s\n%s", best_arch_reduce, best_optimized_arch_reduce)
         genotype = arch_to_genotype(best_arch_normal, best_arch_reduce, self._steps, self.op_type, normal_concat, reduce_concat)
-        pruned_genotype = arch_to_genotype(best_pruned_arch_normal, best_pruned_arch_reduce, self._steps, self.op_type, normal_concat, reduce_concat)
-        draw_genotype(genotype.normal, self._steps, os.path.join(folder, "normal_%s" % suffix))
-        draw_genotype(genotype.reduce, self._steps, os.path.join(folder, "reduce_%s" % suffix))
-        draw_genotype(pruned_genotype.normal, self._steps, os.path.join(folder, "pruned_normal_%s" % suffix))
-        draw_genotype(pruned_genotype.reduce, self._steps, os.path.join(folder, "pruned_reduce_%s" % suffix))
+        transformed_genotype = arch_to_genotype(best_optimized_arch_normal, best_optimized_arch_reduce, self._steps, self.op_type, normal_concat, reduce_concat)
+        draw_genotype(genotype.normal, self._steps, os.path.join(folder, "normal_%s" % suffix), genotype.normal_concat)
+        draw_genotype(genotype.reduce, self._steps, os.path.join(folder, "reduce_%s" % suffix), genotype.reduce_concat)
+        draw_genotype(transformed_genotype.normal, self._steps, os.path.join(folder, "optimized_normal_%s" % suffix), transformed_genotype.normal_concat)
+        draw_genotype(transformed_genotype.reduce, self._steps, os.path.join(folder, "optimized_reduce_%s" % suffix), transformed_genotype.reduce_concat)
         logger.info('genotype = %s', genotype)
-        logger.info('pruned_genotype = %s', pruned_genotype)
+        logger.info('optimized_genotype = %s', transformed_genotype)
 
-    def arch_forward(self, valid_input):
-        arch_normal, arch_normal_logP, arch_normal_entropy = self.arch_normal_master.forward()
-        arch_reduce, arch_reduce_logP, arch_reduce_entropy = self.arch_reduce_master.forward()
+    def transformer_forward(self, valid_input):
+        arch_normal = self.arch_normal_master.forward()
+        arch_reduce = self.arch_reduce_master.forward()
+        optimized_normal, optimized_normal_logP, optimized_normal_entropy = self.arch_transformer.forward(arch_normal)
+        optimized_reduce, optimized_reduce_logP, optimized_reduce_entropy = self.arch_transformer.forward(arch_reduce)
         logits = self._inner_forward(valid_input, arch_normal, arch_reduce)
-        return logits, arch_normal, arch_normal_logP, arch_normal_entropy, arch_reduce, arch_reduce_logP, arch_reduce_entropy
-
-    def pruner_forward(self, valid_input):
-        arch_normal, arch_normal_logP, arch_normal_entropy = self.arch_normal_master.forward()
-        arch_reduce, arch_reduce_logP, arch_reduce_entropy = self.arch_reduce_master.forward()
-        pruner_normal, pruner_normal_logP, pruner_normal_entropy = self.arch_normal_pruner.forward(arch_normal)
-        pruner_reduce, pruner_reduce_logP, pruner_reduce_entropy = self.arch_normal_pruner.forward(arch_reduce)
-        logits = self._inner_forward(valid_input, arch_normal, arch_reduce)
-        pruned_logits = self._inner_forward(valid_input, pruner_normal, pruner_reduce)
-        return logits, pruned_logits, pruner_normal, pruner_normal_logP, pruner_normal_entropy, pruner_reduce, pruner_reduce_logP, pruner_reduce_entropy
+        optimized_logits = self._inner_forward(valid_input, optimized_normal, optimized_reduce)
+        return logits, optimized_logits, optimized_normal, optimized_normal_logP, optimized_normal_entropy, optimized_reduce, optimized_reduce_logP, optimized_reduce_entropy
 
     def step(self, valid_input, valid_target):
-        arch_normal, arch_normal_logP, arch_normal_entropy = self.arch_normal_master.forward()
-        arch_reduce, arch_reduce_logP, arch_reduce_entropy = self.arch_reduce_master.forward()
+        arch_normal = self.arch_normal_master.forward()
+        arch_reduce = self.arch_reduce_master.forward()
         self._model_optimizer.zero_grad()
         logits = self._inner_forward(valid_input, arch_normal, arch_reduce)
         loss = self._criterion(logits, valid_target)
         loss.backward()
         self._model_optimizer.step()
-        return logits, loss, arch_normal, arch_normal_logP, arch_normal_entropy, arch_reduce, arch_reduce_logP, arch_reduce_entropy
+        return logits, loss
 
-    def _loss_arch(self, input, target, baseline=None):
-        logits, arch_normal, arch_normal_logP, arch_normal_entropy, arch_reduce, arch_reduce_logP, arch_reduce_entropy = self.arch_forward(input)
+    def _loss_transformer(self, input, target, baseline=None):
+        logits, optimized_logits, optimized_normal, optimized_normal_logP, optimized_normal_entropy, optimized_reduce, optimized_reduce_logP, optimized_reduce_entropy = self.transformer_forward(input)
         accuracy = utils.accuracy(logits, target)[0] / 100.0
-        reward = accuracy - baseline if baseline else accuracy
-        policy_loss = -(arch_normal_logP + arch_reduce_logP) * reward - (
-        self.entropy_coeff[0] * arch_normal_entropy + self.entropy_coeff[1] * arch_reduce_entropy)
-        return policy_loss, reward, arch_normal_entropy, arch_reduce_entropy
-
-    def _loss_pruner(self, input, target, baseline=None):
-        logits, pruned_logits, pruner_normal, pruner_normal_logP, pruner_normal_entropy, pruner_reduce, pruner_reduce_logP, pruner_reduce_entropy = self.pruner_forward(input)
-        accuracy = utils.accuracy(logits, target)[0] / 100.0
-        pruned_accuracy = utils.accuracy(pruned_logits, target)[0] / 100.0
-        reward_old = pruned_accuracy - accuracy
+        optimized_accuracy = utils.accuracy(optimized_logits, target)[0] / 100.0
+        reward_old = optimized_accuracy - accuracy
         reward_old = reward_old if reward_old>0 else reward_old
         reward = reward_old - baseline if baseline else reward_old
-        policy_loss = -(pruner_normal_logP + pruner_reduce_logP) * reward - (
-        self.entropy_coeff[0] * pruner_normal_entropy + self.entropy_coeff[1] * pruner_reduce_entropy)
-        return policy_loss, reward, pruned_accuracy, pruner_normal_entropy, pruner_reduce_entropy
+        policy_loss = -(optimized_normal_logP + optimized_reduce_logP) * reward - (
+        self.entropy_coeff[0] * optimized_normal_entropy + self.entropy_coeff[1] * optimized_reduce_entropy)
+        return policy_loss, reward, optimized_accuracy, optimized_normal_entropy, optimized_reduce_entropy
 
     def arch_parameters(self):
         return self._arch_parameters

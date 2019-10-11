@@ -150,18 +150,3 @@ class ThinConv2d(nn.Conv2d):
             thin_weight = self.weight
         return F.conv2d(input, thin_weight, self.bias, self.stride,
                         self.padding, self.dilation, self.groups)
-
-
-class FinalConv(nn.Module):
-    def __init__(self, C_in, C_out, affine=True):
-        super(FinalConv, self).__init__()
-        assert C_out % 2 == 0
-        self.relu = nn.ReLU(inplace=False)
-        self.thin_conv = ThinConv2d(C_in, C_out, 1, stride=1, padding=0, bias=False)
-        self.bn = nn.BatchNorm2d(C_out, affine=affine)
-
-    def forward(self, x, index):
-        x = self.relu(x)
-        out = self.thin_conv(x, index)
-        out = self.bn(out)
-        return out

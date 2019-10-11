@@ -5,7 +5,7 @@ import shutil
 import torchvision.transforms as transforms
 from torch.autograd import Variable
 import itertools
-from genotypes import PRIMITIVES, LSTM_PRIMITIVES, LOOSE_END_PRIMITIVES, NOT_LOOSE_END_PRIMITIVES, HAND_PRIMITIVES, PRUNER_PRIMITIVES, Genotype
+from genotypes import LOOSE_END_PRIMITIVES, FULLY_CONCAT_PRIMITIVES, TRANSFORM_PRIMITIVES, Genotype
 from graphviz import Digraph
 from collections import defaultdict
 import scipy.sparse as sp
@@ -258,17 +258,6 @@ def draw_genotype(genotype, n_nodes, filename, concat=None):
 
 
 def arch_to_genotype(arch_normal, arch_reduce, n_nodes, cell_type, normal_concat=None, reduce_concat=None):
-    # if cell_type == "SAMPLE":
-    #     primitives = PRIMITIVES
-    # elif cell_type == "LSTM" or cell_type == 'ENAS' or cell_type == "LSTM2":
-    #     primitives = LSTM_PRIMITIVES
-    # elif cell_type == "LOOSE":
-    #     primitives = LOOSE_END_PRIMITIVES
-    # elif cell_type == "NOT_LOOSE":
-    #     primitives = NOT_LOOSE_END_PRIMITIVES
-    # else:
-    #     assert False, "unsupported controller_type: %s" % cell_type
-
     try:
         primitives = eval(cell_type)
     except:
@@ -384,25 +373,19 @@ def convert_lstm_output(n_nodes, prev_nodes, prev_ops):
 
 
 def translate_arch(arch, action, op_type='NOT_LOOSE_END_PRIMITIVES'):
-    # if op_type == "LOOSE":
-    #     COMPACT_PRIMITIVES = LOOSE_END_PRIMITIVES
-    # elif op_type == "NOT_LOOSE":
-    #     COMPACT_PRIMITIVES = NOT_LOOSE_END_PRIMITIVES
-    # else:
-    #     assert False, "unsupported op type: %s" % op_type
     try:
         COMPACT_PRIMITIVES = eval(op_type)
     except:
         assert False, 'not supported op type %s' % (op_type)
     arch_list = []
     for idx, (op, f, t) in enumerate(arch):
-        pruner_op_name = PRUNER_PRIMITIVES[action[idx]]
-        if pruner_op_name == 'none' or pruner_op_name == 'skip_connect':
+        pruner_op_name = TRANSFORM_PRIMITIVES[action[idx]]
+        if pruner_op_name == 'null' or pruner_op_name == 'skip_connect':
             f_op = COMPACT_PRIMITIVES.index(pruner_op_name)
         elif pruner_op_name == 'same':
             f_op = op
         else:
-            assert False, 'invalid type %s in PRUNER_PRIMITIVES' % pruner_op_name
+            assert False, 'invalid type %s in TRANSFORM_PRIMITIVES' % pruner_op_name
         arch_list.append((f_op, f, t))
     return arch_list
 
@@ -412,12 +395,6 @@ def genotype_to_arch(genotype, op_type='NOT_LOOSE_END_PRIMITIVES'):
         COMPACT_PRIMITIVES = eval(op_type)
     except:
         assert False, 'not supported op type %s' % (op_type)
-    # if op_type == "LOOSE":
-    #     COMPACT_PRIMITIVES = LOOSE_END_PRIMITIVES
-    # elif op_type == "NOT_LOOSE":
-    #     COMPACT_PRIMITIVES = NOT_LOOSE_END_PRIMITIVES
-    # else:
-    #     assert False, "unsupported op type: %s" % op_type
     arch_normal = [(COMPACT_PRIMITIVES.index(op), f, t) for op, f, t in genotype.normal]
     arch_reduce = [(COMPACT_PRIMITIVES.index(op), f, t) for op, f, t in genotype.reduce]
     return arch_normal, arch_reduce

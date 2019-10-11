@@ -5,7 +5,7 @@ Genotype_multi = namedtuple('Genotype', 'normal_bottom normal_concat_bottom redu
                                          normal_mid normal_concat_mid reduce_mid reduce_concat_mid \
                                          normal_top normal_concat_top')
 
-NOT_LOOSE_END_PRIMITIVES = [
+FULLY_CONCAT_PRIMITIVES = [
     'max_pool_3x3',
     'avg_pool_3x3',
     'skip_connect',
@@ -30,7 +30,7 @@ LOOSE_END_PRIMITIVES = [
 ]
 
 TRANSFORM_PRIMITIVES = [
-    'none',
+    'null',
     'same',
     'skip_connect',
 ]

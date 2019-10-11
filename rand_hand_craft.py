@@ -1,6 +1,6 @@
 import torch
 import argparse
-from genotypes import PRIMITIVES, LSTM_PRIMITIVES, LOOSE_END_PRIMITIVES, NOT_LOOSE_END_PRIMITIVES, HAND_PRIMITIVES, PRUNER_PRIMITIVES, Genotype
+from genotypes import PRIMITIVES, LSTM_PRIMITIVES, LOOSE_END_PRIMITIVES, FULLY_CONCAT_PRIMITIVES, HAND_PRIMITIVES, PRUNER_PRIMITIVES, Genotype
 import numpy as np
 import random
 import genotypes
