@@ -25,7 +25,12 @@ ImageNet needs to be manually downloaded (preferably to a SSD) following the ins
 
 ## Training Method
 
-Train NAT on CIFAR-10. We consider two kinds of architectures with their associated operation sets, namely loose-end architectures and fully-concat architectures.
+We consider to optimize two kinds of architectures, namely loose-end architectures and fully-concat architectures. More details about these two kinds of architectures can be found in [ENAS](https://arxiv.org/abs/1802.03268) and [DARTS](https://arxiv.org/abs/1806.09055), respectively.
+
+You may choose 
+	1. `LOOSE_END_PRIMITIVES` for loose-end architectures
+	2. `FULLY_CONCAT_PRIMITIVES` for fully-concat architectures.
+
 ```
 python train_search.py --data $DATA_DIR$ --op_type $OP_TYPE$
 ```
@@ -70,9 +75,7 @@ where `some_arch` should be replaced by any architecture in [genotypes.py](./gen
 
 
 
-
 ## Citation
-
 ```
 @inproceedings{guo2019nat,
   title={NAT: Neural Architecture Transformer for Accurateand Compact Architectures},
