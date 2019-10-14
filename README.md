@@ -56,7 +56,7 @@ You can obtain the transformed architecture by taking an architecture as input, 
 
 
 ```
-python nas_compact_derive.py --data ./data --arch DARTS --model_path pretrained/fully_connect.pt
+python derive.py --data ./data --arch DARTS --model_path pretrained/fully_connect.pt
 ```
 
 <p align="center">
