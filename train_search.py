@@ -22,7 +22,7 @@ parser.add_argument('--learning_rate', type=float, default=0.01, help='init lear
 parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
 parser.add_argument('--weight_decay', type=float, default=3e-4, help='weight decay')
 parser.add_argument('--report_freq', type=int, default=50, help='report frequency')
-parser.add_argument('--test_freq', type=int, default=4, help='test frequency')
+parser.add_argument('--test_freq', type=int, default=10, help='test frequency')
 parser.add_argument('--gpu', type=int, default=0, help='gpu device id')
 parser.add_argument('--epochs', type=int, default=100, help='number of training epochs')
 parser.add_argument('--init_channels', type=int, default=20, help='number of init channels')
@@ -142,8 +142,8 @@ def main():
         lr = scheduler.get_lr()[0]
         logging.info('epoch %d lr %e', epoch, lr)
 
-        # train_acc, train_obj, train_normal_ent, train_reduce_ent = update_w(train_queue, model, device)
-        # logging.info('Updating W: train_acc %f train_normal ent %f train_reduce_ent %f', train_acc, train_normal_ent, train_reduce_ent)
+        logging.info('Updating Shared Parameters')
+        update_w(train_queue, model, device)
         logging.info('Updating Theta')
         update_theta(valid_arch_queue, transformer, device)
 
@@ -176,8 +176,6 @@ def update_w(valid_queue, model, device):
         if step % args.report_freq == 0:
             logging.info('Updating W: Step=%03d Loss=%e Top1=%f Top5=%f Noraml_ENT=%f, Reduce_ENT=%f',
                          step, objs.avg, top1.avg, top5.avg, normal_ent.avg, reduce_ent.avg)
-
-    return top1.avg, objs.avg, normal_ent.avg, reduce_ent.avg
 
 
 def update_theta(valid_queue, transformer, device):

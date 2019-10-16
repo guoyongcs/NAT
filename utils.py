@@ -350,7 +350,7 @@ def sum_normalize(input):
     return input/torch.sum(input, -1, keepdim=True)
 
 
-def convert_lstm_output(n_nodes, prev_nodes, prev_ops):
+def convert_output(n_nodes, prev_nodes, prev_ops):
     """
 
     :param n_nodes: number of nodes
@@ -372,7 +372,7 @@ def convert_lstm_output(n_nodes, prev_nodes, prev_ops):
     return arch_list
 
 
-def translate_arch(arch, action, op_type='NOT_LOOSE_END_PRIMITIVES'):
+def translate_arch(arch, action, op_type='FULLY_CONCAT_PRIMITIVES'):
     try:
         COMPACT_PRIMITIVES = eval(op_type)
     except:
@@ -390,7 +390,7 @@ def translate_arch(arch, action, op_type='NOT_LOOSE_END_PRIMITIVES'):
     return arch_list
 
 
-def genotype_to_arch(genotype, op_type='NOT_LOOSE_END_PRIMITIVES'):
+def genotype_to_arch(genotype, op_type='FULLY_CONCAT_PRIMITIVES'):
     try:
         COMPACT_PRIMITIVES = eval(op_type)
     except:

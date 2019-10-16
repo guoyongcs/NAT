@@ -121,32 +121,3 @@ class FactorizedReduce(nn.Module):
         out = self.bn(out)
         return out
 
-
-class ThinConv2d(nn.Conv2d):
-    """
-    custom convolutional layers for thin convolution
-    """
-
-    def __init__(self, in_channels, out_channels, kernel_size,
-                 stride=1, padding=0, dilation=1, groups=1, bias=True):
-        super(ThinConv2d, self).__init__(in_channels=in_channels, out_channels=out_channels,
-                                         kernel_size=kernel_size,
-                                         stride=stride, padding=padding, dilation=dilation, groups=groups, bias=bias)
-
-    def _thin_weight(self, input, index=None):
-        n, c, h, w = input.size()
-        # print(index.size())
-        # print(index)
-        num_nodes = index.size(0)
-        index = index.view(1, num_nodes, 1, 1)
-        final_index = index.expand(n, num_nodes, h, w)
-        thin_data = torch.gather(input, 1, final_index)
-        return thin_data
-
-    def forward(self, input, index=None):
-        if index is not None:
-            thin_weight = self._thin_weight(self.weight, index)
-        else:
-            thin_weight = self.weight
-        return F.conv2d(input, thin_weight, self.bias, self.stride,
-                        self.padding, self.dilation, self.groups)

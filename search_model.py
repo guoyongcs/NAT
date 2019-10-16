@@ -178,71 +178,25 @@ class ArchTransformer(nn.Module):
 
 
 class ArchMaster(nn.Module):
-    def __init__(self, n_ops, n_nodes, device, controller_hid=None, lstm_num_layers=2):
+    def __init__(self, n_ops, n_nodes):
         super(ArchMaster, self).__init__()
         self.K = sum([x + 2 for x in range(n_nodes)])
         self.n_ops = n_ops
         self.n_nodes = n_nodes
-        self.device = device
-
-        self.controller_hid = controller_hid
-        self.attention_hid = self.controller_hid
-        self.lstm_num_layers = lstm_num_layers
-
-        # Embedding of (n_nodes+1) nodes
-        # Note that the (n_nodes+2)-th node will not be used
-        self.node_op_hidden = nn.Embedding(n_nodes + 1 + n_ops, self.controller_hid)
-        self.emb_attn = nn.Linear(self.controller_hid, self.attention_hid, bias=False)
-        self.hid_attn = nn.Linear(self.controller_hid, self.attention_hid, bias=False)
-        self.v_attn = nn.Linear(self.controller_hid, 1, bias=False)
-        self.w_soft = nn.Linear(self.controller_hid, self.n_ops)
-        self.lstm = nn.LSTMCell(self.controller_hid, self.controller_hid)
-        self.reset_parameters()
-        self.static_init_hidden = utils.keydefaultdict(self.init_hidden)
-        self.static_inputs = utils.keydefaultdict(self._get_default_hidden)
-        self.tanh = nn.Tanh()
         self.prev_nodes, self.prev_ops = [], []
-        self.query_index = torch.LongTensor(range(0, n_nodes+1)).to(device)
-
-    def _get_default_hidden(self, key):
-        return utils.get_variable(
-            torch.zeros(key, self.controller_hid), self.device, requires_grad=False)
-
-    # device
-    def init_hidden(self, batch_size):
-        zeros = torch.zeros(batch_size, self.controller_hid)
-        return (utils.get_variable(zeros, self.device, requires_grad=False),
-                utils.get_variable(zeros.clone(), self.device, requires_grad=False))
-
-    def reset_parameters(self):
-        init_range = 0.1
-        for param in self.parameters():
-            param.data.uniform_(-init_range, init_range)
-        self.w_soft.bias.data.fill_(0)
 
     def forward(self):
         self.prev_nodes, self.prev_ops = [], []
-        batch_size = 1
-        inputs = self.static_inputs[batch_size]  # batch_size x hidden_dim
         for node_idx in range(self.n_nodes):
             for i in range(2):  # index_1, index_2
-                if node_idx == 0 and i == 0:
-                    embed = inputs
-                else:
-                    embed = self.node_op_hidden(inputs)
-                # force uniform
-                probs = F.softmax(torch.zeros(node_idx + 2).type_as(embed), dim=-1)
+                probs = F.softmax(torch.zeros(node_idx + 2).float(), dim=-1)
                 action = probs.multinomial(num_samples=1)
                 self.prev_nodes.append(action)
-                inputs = utils.get_variable(action, self.device, requires_grad=False)
             for i in range(2):  # op_1, op_2
-                embed = self.node_op_hidden(inputs)
-                # force uniform
-                probs = F.softmax(torch.zeros(self.n_ops).type_as(embed), dim=-1)
+                probs = F.softmax(torch.zeros(self.n_ops).float(), dim=-1)
                 action = probs.multinomial(num_samples=1)
                 self.prev_ops.append(action)
-                inputs = utils.get_variable(action + self.n_nodes + 1, self.device, requires_grad=False)
-        arch = utils.convert_lstm_output(self.n_nodes, torch.cat(self.prev_nodes), torch.cat(self.prev_ops))
+        arch = utils.convert_output(self.n_nodes, torch.cat(self.prev_nodes), torch.cat(self.prev_ops))
         return arch
 
 
@@ -307,8 +261,8 @@ class NASNetwork(nn.Module):
             assert False, 'not supported op type %s' % (self.op_type)
 
         num_ops = len(COMPACT_PRIMITIVES)-1
-        self.arch_normal_master = ArchMaster(num_ops, self._steps, self._device, self.controller_hid)
-        self.arch_reduce_master = ArchMaster(num_ops, self._steps, self._device, self.controller_hid)
+        self.arch_normal_master = ArchMaster(num_ops, self._steps)
+        self.arch_reduce_master = ArchMaster(num_ops, self._steps)
         self._arch_parameters = list(self.arch_normal_master.parameters()) + list(self.arch_reduce_master.parameters())
 
     def _initialize_arch_transformer(self):

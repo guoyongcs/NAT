@@ -42,7 +42,7 @@ parser.add_argument('--transformer_dropout', type=float, default=0, help='dropou
 parser.add_argument('--transformer_normalize', action='store_true', default=False, help='use normalize in GCN')
 parser.add_argument('--arch', type=str, default='DARTS', help='which architecture to use')
 parser.add_argument('--num_steps', type=int, default=4, help='edge hidden dimension')
-parser.add_argument('--op_type', type=str, default='NOT_LOOSE_END_PRIMITIVES', help='LOOSE_END_PRIMITIVES | FULLY_CONCAT_PRIMITIVES')
+parser.add_argument('--op_type', type=str, default='FULLY_CONCAT_PRIMITIVES', help='LOOSE_END_PRIMITIVES | FULLY_CONCAT_PRIMITIVES')
 
 args = parser.parse_args()
 
