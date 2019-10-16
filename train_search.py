@@ -69,8 +69,8 @@ fh = logging.FileHandler(os.path.join(args.save, 'log.txt'))
 fh.setFormatter(logging.Formatter(log_format))
 logging.getLogger().addHandler(fh)
 logger = logging.getLogger()
-
 CIFAR_CLASSES = 10
+
 
 def main():
     if torch.cuda.is_available():
@@ -153,6 +153,7 @@ def main():
     # save model
     if args.store == 1:
         utils.save(model, os.path.join(args.save, 'models.pt'))
+
 
 def update_w(valid_queue, model, device):
     objs = utils.AvgrageMeter()
