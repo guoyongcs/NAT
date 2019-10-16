@@ -1,6 +1,6 @@
 # NAT: Neural Architecture Transformer for Accurate and Compact Architectures
 
-Pytorch implementation for “NAT: Neural Architecture Transformer for Accurate and Compact Architectures”.
+Pytorch implementation for "NAT: Neural Architecture Transformer for Accurate and Compact Architectures".
 
 ## A Simple Demo of NAT
 
