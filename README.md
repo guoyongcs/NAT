@@ -29,13 +29,18 @@ We consider to optimize two kinds of architectures, namely loose-end architectur
 
 Train NAT for fully-concat architectures.
 ```
-python train_search.py --data $DATA_DIR$ --op_type FULLY_CONCAT_PRIMITIVES
+python train_search.py --data $DATA_DIR$ --num_nodes $NUM_NODES$ --op_type FULLY_CONCAT_PRIMITIVES
 ```
 
 Train NAT for loose-end architectures.
 ```
-python train_search.py --data $DATA_DIR$ --op_type LOOSE_END_PRIMITIVES
+python train_search.py --data $DATA_DIR$ --num_nodes $NUM_NODES$ --op_type LOOSE_END_PRIMITIVES
 ```
+
+- DATA_DIR: path to save data.
+- NUM_NODES: number of intermediate nodes in the architecture, *e.g.*, 4 for DARTS and 5 for ENAS.
+
+
 
 ## Inference Method
 

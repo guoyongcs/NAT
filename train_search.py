@@ -46,7 +46,7 @@ parser.add_argument('--transformer_nfeat', type=int, default=1024, help='feature
 parser.add_argument('--transformer_nhid', type=int, default=100, help='hidden dimension')
 parser.add_argument('--transformer_dropout', type=float, default=0, help='dropout rate for transformer')
 parser.add_argument('--transformer_normalize', action='store_true', default=False, help='use normalize in GCN')
-parser.add_argument('--num_steps', type=int, default=4, help='edge hidden dimension')
+parser.add_argument('--num_nodes', type=int, default=4, help='number of intermediate nodes')
 parser.add_argument('--op_type', type=str, default='FULLY_CONCAT_PRIMITIVES', help='LOOSE_END_PRIMITIVES | FULLY_CONCAT_PRIMITIVES')
 
 args = parser.parse_args()
@@ -91,7 +91,7 @@ def main():
     criterion = criterion.to(device)
 
     model = Network(
-        args.init_channels, CIFAR_CLASSES, args.layers, criterion, device, steps=args.num_steps, controller_hid=args.controller_hid, entropy_coeff=args.entropy_coeff, edge_hid = args.edge_hid, transformer_nfeat = args.transformer_nfeat, transformer_nhid = args.transformer_nhid, transformer_dropout = args.transformer_dropout, transformer_normalize = args.transformer_normalize, loose_end = args.loose_end, op_type=args.op_type
+        args.init_channels, CIFAR_CLASSES, args.layers, criterion, device, steps=args.num_nodes, controller_hid=args.controller_hid, entropy_coeff=args.entropy_coeff, edge_hid = args.edge_hid, transformer_nfeat = args.transformer_nfeat, transformer_nhid = args.transformer_nhid, transformer_dropout = args.transformer_dropout, transformer_normalize = args.transformer_normalize, loose_end = args.loose_end, op_type=args.op_type
     )
 
     model_optimizer = torch.optim.SGD(
