@@ -103,7 +103,6 @@ def main():
 
     train_transform, valid_transform = utils._data_transforms_cifar10(args)
     train_data = dset.CIFAR10(root=args.data, train=True, download=True, transform=train_transform)
-    test_data = dset.CIFAR10(root=args.data, train=False, download=True, transform=valid_transform)
 
     num_train = len(train_data)
     indices = list(range(num_train))
@@ -121,10 +120,6 @@ def main():
         pin_memory=True, num_workers=2
     )
 
-    derive_queue = torch.utils.data.DataLoader(
-        test_data, batch_size=args.batch_size,
-        shuffle=False, pin_memory=True, num_workers=2
-    )
     if args.scheduler == "naive_cosine":
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             model_optimizer, float(args.epochs), eta_min=args.learning_rate_min
@@ -148,7 +143,7 @@ def main():
         update_theta(valid_arch_queue, transformer, device)
 
         if (epoch+1) % args.test_freq == 0:
-            model.test(derive_queue, args.n_archs, logger, args.save, "%d" % epoch)
+            model.test(valid_arch_queue, args.n_archs, logger, args.save, "%d" % epoch)
 
     # save model
     if args.store == 1:

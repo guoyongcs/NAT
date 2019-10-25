@@ -20,6 +20,7 @@ import genotypes
 parser = argparse.ArgumentParser("CompactNAS")
 parser.add_argument('--data', type=str, default='../data', help='location of the data corpus')
 parser.add_argument('--batch_size', type=int, default=64, help='batch size')
+parser.add_argument('--train_portion', type=float, default=0.4, help='data portion for training weights')
 parser.add_argument('--gpu', type=int, default=0, help='gpu device id')
 parser.add_argument('--init_channels', type=int, default=20, help='number of init channels')
 parser.add_argument('--layers', type=int, default=8, help='total number of layers')
@@ -68,7 +69,6 @@ logger = logging.getLogger()
 
 CIFAR_CLASSES = 10
 
-
 def main():
     if torch.cuda.is_available():
         torch.cuda.set_device(args.gpu)
@@ -96,15 +96,17 @@ def main():
 
     train_transform, valid_transform = utils._data_transforms_cifar10(args)
     train_data = dset.CIFAR10(root=args.data, train=True, download=True, transform=train_transform)
-    test_data = dset.CIFAR10(root=args.data, train=False, download=True, transform=valid_transform)
 
     num_train = len(train_data)
     indices = list(range(num_train))
     random.shuffle(indices)
 
+    split = int(np.floor(args.train_portion * num_train))
+
     derive_queue = torch.utils.data.DataLoader(
-        test_data, batch_size=args.batch_size,
-        shuffle=False, pin_memory=True, num_workers=2
+        train_data, batch_size=args.batch_size,
+        sampler=torch.utils.data.sampler.SubsetRandomSampler(indices[split:num_train]),
+        pin_memory=True, num_workers=2
     )
 
     model.load_state_dict(torch.load(args.model_path), strict=False)
