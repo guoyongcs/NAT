@@ -4,6 +4,8 @@ Pytorch implementation for "NAT: Neural Architecture Transformer for Accurate an
 
 ## A Simple Demo of NAT
 
+
+
 <p align="center">
     <img src="./imgs/different_transformation.gif" width="100%"/>
 </p>
@@ -82,6 +84,9 @@ where `some_arch` should be replaced by any architecture in [genotypes.py](./gen
 
 
 ## Citation
+
+If you use any part of this code in your research, please cite our paper:
+
 ```
 @inproceedings{guo2019nat,
   title={NAT: Neural Architecture Transformer for Accurateand Compact Architectures},
