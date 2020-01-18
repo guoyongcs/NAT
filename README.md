@@ -67,10 +67,10 @@ python derive.py --data ./data --arch DARTS --model_path pretrained/fully_connec
 ```
 
 <p align="center">
-<img src="./imgs/darts.jpg" alt="darts" width="80%">
+<img src="./imgs/darts.jpg" alt="darts" width="90%">
 </p>
 <p align="center">
-Figure: An example of architecture transformation..
+Figure: An example of architecture transformation.
 </p>
 
 ## Architecture Visualization
